@@ -1,4 +1,4 @@
-package org.example;
+package fr.isen.project;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -9,20 +9,22 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
-import org.example.model.LignePanier;
-import org.example.model.Plat;
-import org.example.service.RestaurantService;
+
+// Importation de tes modèles Modelio et du service ISEN
+import fr.isen.project.model.Categorie;
+import fr.isen.project.model.Commande;
+import fr.isen.project.model.LigneCommande;
+import fr.isen.project.model.Plat;
+import fr.isen.project.service.RestaurantService;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class BorneApp extends Application {
 
-    // On utilise le Service pour parler au backend
     private final RestaurantService service = new RestaurantService();
-    private List<Plat> menuGlobal = new ArrayList<>();
-    private final List<LignePanier> panier = new ArrayList<>();
+    private List<Categorie> menuCategories = new ArrayList<>();
+    private final Commande commandeEnCours = new Commande(); // Utilise le modèle Commande de Modelio
     private BorderPane rootLayout;
 
     public static void main(String[] args) {
@@ -31,29 +33,22 @@ public class BorneApp extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        // Chargement des données via le Service au démarrage
+        // Chargement des catégories et plats via le Service (Port 8080)
         try {
-            menuGlobal = service.getMenu();
+            menuCategories = service.getMenu();
         } catch (Exception e) {
             System.err.println("Impossible de charger le menu: " + e.getMessage());
         }
 
-        // Configuration de la fenêtre principale
         rootLayout = new BorderPane();
         rootLayout.setStyle("-fx-background-color: #1e293b;");
 
         showEcranAccueil();
 
-        // --- CORRECTION ECRAN ---
-        // On ne met pas de taille fixe (comme 1280x800) pour éviter que ça dépasse
         Scene scene = new Scene(rootLayout);
-
-        primaryStage.setTitle("Borne Commande Asie");
+        primaryStage.setTitle("Borne Commande Asie - ISEN");
         primaryStage.setScene(scene);
-
-        // On maximise la fenêtre pour qu'elle prenne tout l'écran disponible
-        primaryStage.setMaximized(true);
-
+        primaryStage.setMaximized(true); // Plein écran pour le rendu borne
         primaryStage.show();
     }
 
@@ -69,26 +64,31 @@ public class BorneApp extends Application {
 
         Button btnStart = new Button("COMMENCER LA COMMANDE");
         btnStart.setStyle("-fx-font-size: 24px; -fx-padding: 20 50; -fx-background-color: #d97706; -fx-text-fill: white; -fx-cursor: hand;");
-        btnStart.setOnAction(e -> showEcranCatalogue("Entrées"));
+
+        // Navigation vers la première catégorie récupérée du serveur
+        btnStart.setOnAction(e -> {
+            if (!menuCategories.isEmpty()) {
+                showEcranCatalogue(menuCategories.get(0));
+            }
+        });
 
         content.getChildren().addAll(titre, btnStart);
         rootLayout.setCenter(content);
         rootLayout.setTop(null);
     }
 
-    private void showEcranCatalogue(String categorieSelectionnee) {
-        // Barre de navigation (Haut)
+    private void showEcranCatalogue(Categorie catActive) {
+        // Barre de navigation dynamique basée sur tes catégories Modelio
         HBox nav = new HBox(15);
         nav.setPadding(new Insets(20));
         nav.setStyle("-fx-background-color: #0f172a;");
         nav.setAlignment(Pos.CENTER_LEFT);
 
-        String[] categories = {"Entrées", "Plats", "Desserts"};
-        for (String cat : categories) {
-            Button btnCat = new Button(cat);
+        for (Categorie cat : menuCategories) {
+            Button btnCat = new Button(cat.nom); // Champ public 'nom'
             String style = "-fx-font-size: 18px; -fx-padding: 10 20; -fx-text-fill: white; -fx-cursor: hand; ";
-            // Style différent si la catégorie est active
-            if (cat.equalsIgnoreCase(categorieSelectionnee)) {
+
+            if (cat == catActive) {
                 btnCat.setStyle(style + "-fx-background-color: #d97706;");
             } else {
                 btnCat.setStyle(style + "-fx-background-color: #334155;");
@@ -97,49 +97,45 @@ public class BorneApp extends Application {
             nav.getChildren().add(btnCat);
         }
 
-        // Bouton Panier à droite
+        // Bouton Panier
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Button btnPanier = new Button("Panier (" + getPanierCount() + ")");
         btnPanier.setStyle("-fx-font-size: 18px; -fx-background-color: #22c55e; -fx-text-fill: white; -fx-cursor: hand;");
-        btnPanier.setOnAction(e -> showEcranPanier());
+        btnPanier.setOnAction(e -> showEcranPanier(catActive));
         nav.getChildren().addAll(spacer, btnPanier);
 
         rootLayout.setTop(nav);
 
-        // Grille des produits (Centre)
+        // Grille des produits
         ScrollPane scroll = new ScrollPane();
         scroll.setFitToWidth(true);
-        scroll.setStyle("-fx-background: #1e293b; -fx-border-color: #1e293b;"); // Enlever les bordures blanches du scrollpane
+        scroll.setStyle("-fx-background: #1e293b; -fx-border-color: #1e293b;");
 
         FlowPane grid = new FlowPane();
         grid.setPadding(new Insets(20));
         grid.setHgap(20);
         grid.setVgap(20);
         grid.setStyle("-fx-background-color: #1e293b;");
-        grid.setAlignment(Pos.TOP_CENTER); // Centrer les cartes
+        grid.setAlignment(Pos.TOP_CENTER);
 
-        // Filtrage des plats
-        List<Plat> platsFiltres = menuGlobal.stream()
-                .filter(p -> p.categorie.equalsIgnoreCase(categorieSelectionnee))
-                .collect(Collectors.toList());
-
-        for (Plat p : platsFiltres) {
-            grid.getChildren().add(creerCartePlat(p));
+        // Affiche les plats de la catégorie courante
+        for (Plat p : catActive.plats) {
+            grid.getChildren().add(creerCartePlat(p, catActive));
         }
 
         scroll.setContent(grid);
         rootLayout.setCenter(scroll);
     }
 
-    private VBox creerCartePlat(Plat p) {
+    private VBox creerCartePlat(Plat p, Categorie catSource) {
         VBox card = new VBox(10);
         card.setPadding(new Insets(15));
         card.setStyle("-fx-background-color: #334155; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.3), 10, 0, 0, 0);");
         card.setPrefWidth(250);
         card.setAlignment(Pos.CENTER_LEFT);
 
-        Label nom = new Label(p.nom);
+        Label nom = new Label(p.nom); // Accès direct au champ public
         nom.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 18px;");
         nom.setWrapText(true);
 
@@ -147,23 +143,22 @@ public class BorneApp extends Application {
         desc.setWrapText(true);
         desc.setStyle("-fx-text-fill: #cbd5e1;");
 
-        // Espace flexible pour pousser le prix et le bouton vers le bas
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
 
-        Label prix = new Label(String.format("%.2f €", p.prix));
+        Label prix = new Label(String.format("%.2f €", p.prix)); // Champ public float
         prix.setStyle("-fx-text-fill: #d97706; -fx-font-weight: bold; -fx-font-size: 16px;");
 
         Button btnAdd = new Button("Ajouter");
         btnAdd.setMaxWidth(Double.MAX_VALUE);
         btnAdd.setStyle("-fx-background-color: #d97706; -fx-text-fill: white; -fx-cursor: hand;");
-        btnAdd.setOnAction(e -> showEcranDetail(p));
+        btnAdd.setOnAction(e -> showEcranDetail(p, catSource));
 
         card.getChildren().addAll(nom, desc, spacer, prix, btnAdd);
         return card;
     }
 
-    private void showEcranDetail(Plat p) {
+    private void showEcranDetail(Plat p, Categorie catSource) {
         VBox content = new VBox(25);
         content.setAlignment(Pos.CENTER);
         content.setStyle("-fx-background-color: #1e293b;");
@@ -175,7 +170,7 @@ public class BorneApp extends Application {
         Label desc = new Label(p.description);
         desc.setStyle("-fx-text-fill: #cbd5e1; -fx-font-size: 18px;");
 
-        // Options
+        // Options (LigneCommande)
         ToggleGroup group = new ToggleGroup();
         RadioButton rbStandard = new RadioButton("Standard");
         rbStandard.setToggleGroup(group);
@@ -203,23 +198,31 @@ public class BorneApp extends Application {
         btnAdd.setStyle("-fx-background-color: #22c55e; -fx-text-fill: white; -fx-font-size: 18px; -fx-padding: 10 30; -fx-cursor: hand;");
         btnAdd.setOnAction(e -> {
             String opt = ((RadioButton) group.getSelectedToggle()).getText();
-            panier.add(new LignePanier(p, spinner.getValue(), opt));
-            showEcranCatalogue(p.categorie);
+
+            // Création d'une LigneCommande Modelio
+            LigneCommande ligne = new LigneCommande();
+            ligne.plat = p;
+            ligne.quantite = spinner.getValue();
+            ligne.options = opt;
+
+            // Ajout à la liste générée par Modelio
+            commandeEnCours.ligneCommande.add(ligne);
+            showEcranCatalogue(catSource);
         });
 
         Button btnBack = new Button("Annuler");
         btnBack.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-size: 18px; -fx-padding: 10 30; -fx-cursor: hand;");
-        btnBack.setOnAction(e -> showEcranCatalogue(p.categorie));
+        btnBack.setOnAction(e -> showEcranCatalogue(catSource));
 
         HBox actions = new HBox(20, btnBack, btnAdd);
         actions.setAlignment(Pos.CENTER);
 
         content.getChildren().addAll(nom, desc, options, qteBox, actions);
         rootLayout.setCenter(content);
-        rootLayout.setTop(null); // On cache la barre de navigation
+        rootLayout.setTop(null);
     }
 
-    private void showEcranPanier() {
+    private void showEcranPanier(Categorie catSource) {
         VBox content = new VBox(20);
         content.setPadding(new Insets(30));
         content.setAlignment(Pos.CENTER);
@@ -231,40 +234,39 @@ public class BorneApp extends Application {
         ListView<String> list = new ListView<>();
         list.setStyle("-fx-control-inner-background: #334155; -fx-background-color: #334155; -fx-text-fill: white;");
 
-        for (LignePanier l : panier) {
-            list.getItems().add(l.plat.nom + " x" + l.quantite + " (" + l.options + ") - " + String.format("%.2f €", l.getTotal()));
+        for (LigneCommande l : commandeEnCours.ligneCommande) {
+            double totalLigne = l.plat.prix * l.quantite;
+            list.getItems().add(l.plat.nom + " x" + l.quantite + " (" + l.options + ") - " + String.format("%.2f €", totalLigne));
         }
 
-        Label total = new Label("Total: " + String.format("%.2f €", calculerTotal()));
-        total.setStyle("-fx-text-fill: #d97706; -fx-font-size: 28px; -fx-font-weight: bold;");
+        Label totalLabel = new Label("Total: " + String.format("%.2f €", calculerTotal()));
+        totalLabel.setStyle("-fx-text-fill: #d97706; -fx-font-size: 28px; -fx-font-weight: bold;");
 
         Button btnPay = new Button("Payer et Envoyer");
         btnPay.setStyle("-fx-background-color: #22c55e; -fx-text-fill: white; -fx-font-size: 20px; -fx-padding: 15 40; -fx-cursor: hand;");
         btnPay.setOnAction(e -> {
-            if (panier.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Votre panier est vide !");
-                alert.show();
+            if (commandeEnCours.ligneCommande.isEmpty()) {
+                new Alert(Alert.AlertType.WARNING, "Votre panier est vide !").show();
                 return;
             }
             try {
-                // Appel au service pour envoyer la commande au backend
-                String id = service.envoyerCommande(panier, calculerTotal(), "Client Borne");
-                panier.clear();
+                commandeEnCours.nomClient = "Borne ISEN";
+                String id = service.envoyerCommande(commandeEnCours);
+                commandeEnCours.ligneCommande.clear();
                 showEcranConfirmation(id);
             } catch (Exception ex) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Erreur réseau: " + ex.getMessage());
-                alert.show();
+                new Alert(Alert.AlertType.ERROR, "Erreur réseau: " + ex.getMessage()).show();
             }
         });
 
         Button btnBack = new Button("Retour au menu");
         btnBack.setStyle("-fx-background-color: #64748b; -fx-text-fill: white; -fx-font-size: 18px; -fx-padding: 10 30; -fx-cursor: hand;");
-        btnBack.setOnAction(e -> showEcranCatalogue("Entrées"));
+        btnBack.setOnAction(e -> showEcranCatalogue(catSource));
 
         HBox actions = new HBox(20, btnBack, btnPay);
         actions.setAlignment(Pos.CENTER);
 
-        content.getChildren().addAll(titre, list, total, actions);
+        content.getChildren().addAll(titre, list, totalLabel, actions);
         rootLayout.setCenter(content);
         rootLayout.setTop(null);
     }
@@ -280,23 +282,23 @@ public class BorneApp extends Application {
         Label numCmd = new Label("Numéro : #" + id);
         numCmd.setStyle("-fx-text-fill: #22c55e; -fx-font-size: 48px; -fx-font-weight: bold;");
 
-        Label info = new Label("Veuillez récupérer votre ticket.");
-        info.setStyle("-fx-text-fill: #cbd5e1; -fx-font-size: 18px;");
-
         Button btnHome = new Button("Retour Accueil");
         btnHome.setStyle("-fx-background-color: #d97706; -fx-text-fill: white; -fx-font-size: 20px; -fx-padding: 15 40; -fx-cursor: hand;");
         btnHome.setOnAction(e -> showEcranAccueil());
 
-        content.getChildren().addAll(msg, numCmd, info, btnHome);
+        content.getChildren().addAll(msg, numCmd, btnHome);
         rootLayout.setCenter(content);
-        rootLayout.setTop(null);
     }
 
     private double calculerTotal() {
-        return panier.stream().mapToDouble(LignePanier::getTotal).sum();
+        return commandeEnCours.ligneCommande.stream()
+                .mapToDouble(l -> l.plat.prix * l.quantite)
+                .sum();
     }
 
     private int getPanierCount() {
-        return panier.stream().mapToInt(l -> l.quantite).sum();
+        return commandeEnCours.ligneCommande.stream()
+                .mapToInt(l -> l.quantite)
+                .sum();
     }
 }

@@ -1,4 +1,4 @@
-package org.example;
+package fr.isen.project;
 
 public class Launcher {
     public static void main(String[] args) {

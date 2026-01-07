@@ -47,7 +47,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>org.example.BorneApp</mainClass>
+                    <mainClass>fr.isen.projet.BorneApp</mainClass>
                 </configuration>
             </plugin>
         </plugins>
